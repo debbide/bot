@@ -1,0 +1,60 @@
+name: bot-hosting renew
+
+on:
+  schedule:
+    # 每天 UTC 00:00 = UTC+8 08:00
+    - cron: '0 0 * * *'
+  workflow_dispatch:  # 手动触发
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system deps (xvfb + Chrome deps)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xvfb \
+            libnss3 libxss1 libasound2t64 libatk1.0-0 libatk-bridge2.0-0 \
+            libgtk-3-0 libgbm1 libxdamage1 libxcomposite1 libxrandr2 \
+            fonts-liberation
+
+      - name: Install Google Chrome
+        run: |
+          wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo apt-get install -y ./google-chrome-stable_current_amd64.deb
+          google-chrome --version
+
+      - name: Install Python deps
+        run: |
+          pip install --upgrade pip
+          pip install seleniumbase
+
+      - name: Run renew script
+        env:
+          TOKEN: ${{ secrets.BOT_HOSTING_TOKEN }}
+          PROXY: ${{ secrets.PROXY }}   # 可选，没配就是空
+        run: |
+          cd bot-hosting-renew
+          python renew.py
+
+      - name: Upload debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-${{ github.run_id }}
+          path: |
+            bot-hosting-renew/page_debug.html
+            bot-hosting-renew/page_debug.png
+            bot-hosting-renew/after_renew.png
+          if-no-files-found: ignore
+          retention-days: 7
