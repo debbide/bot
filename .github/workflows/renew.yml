@@ -97,16 +97,29 @@ jobs:
           cat sing-box.log
           exit 1
 
-      - name: 10. 验证代理出口 IP（直连 vs 代理对比）
+      - name: 10. 验证代理出口 IP（直连 vs 代理对比，已打码）
         if: steps.proxy_check.outputs.use_proxy == 'true'
         run: |
+          mask() {
+            # 把 a.b.c.d 打码成 a.b.x.x；IPv6 只保留前两段
+            local ip="$1"
+            if [ -z "$ip" ] || [ "$ip" = "FAIL" ]; then
+              echo "$ip"; return
+            fi
+            if echo "$ip" | grep -q ':'; then
+              echo "$ip" | awk -F: '{print $1":"$2":x:x:x:x:x:x"}'
+            else
+              echo "$ip" | awk -F. '{print $1"."$2".x.x"}'
+            fi
+          }
+
           echo "--- 直连出口 IP（GitHub Actions runner）---"
           DIRECT=$(curl -s --max-time 10 https://api.ipify.org || echo "FAIL")
-          echo "  $DIRECT"
+          echo "  $(mask "$DIRECT")"
           echo
           echo "--- 走 sing-box 代理出口 IP ---"
           PROXIED=$(curl -s --max-time 15 -x "$LOCAL_PROXY" https://api.ipify.org || echo "FAIL")
-          echo "  $PROXIED"
+          echo "  $(mask "$PROXIED")"
           echo
           if [ "$PROXIED" = "FAIL" ] || [ -z "$PROXIED" ]; then
             echo "::error::代理不通，看步骤 9 的 sing-box 日志"
@@ -116,7 +129,7 @@ jobs:
           if [ "$DIRECT" = "$PROXIED" ]; then
             echo "::warning::直连和代理 IP 相同！代理可能没生效"
           else
-            echo "✓ 代理生效：出口从 $DIRECT 变成 $PROXIED"
+            echo "✓ 代理生效：出口 IP 已切换（原 $(mask "$DIRECT") → 现 $(mask "$PROXIED"))"
           fi
 
       - name: 11. 运行续期脚本 renew.py
