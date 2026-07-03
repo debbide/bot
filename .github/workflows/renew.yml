@@ -2,47 +2,49 @@ name: bot-hosting renew
 
 on:
   schedule:
-    # 每天 UTC 00:00 = UTC+8 08:00
-    - cron: '0 0 * * *'
-  workflow_dispatch:  # 手动触发
+    - cron: '0 0 * * *'   # UTC 00:00 = UTC+8 08:00
+  workflow_dispatch:
 
 jobs:
   renew:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    env:
+      SING_BOX_VERSION: '1.10.7'
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install system deps (xvfb + Chrome deps)
+      - name: Install system deps (xvfb + Chrome + sing-box)
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            xvfb \
+          sudo apt-get install -y xvfb curl \
             libnss3 libxss1 libasound2t64 libatk1.0-0 libatk-bridge2.0-0 \
             libgtk-3-0 libgbm1 libxdamage1 libxcomposite1 libxrandr2 \
             fonts-liberation
-
-      - name: Install Google Chrome
-        run: |
           wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
           sudo apt-get install -y ./google-chrome-stable_current_amd64.deb
           google-chrome --version
+          cd /tmp
+          curl -fsSL -o sing-box.tar.gz \
+            "https://github.com/SagerNet/sing-box/releases/download/v${SING_BOX_VERSION}/sing-box-${SING_BOX_VERSION}-linux-amd64.tar.gz"
+          tar xzf sing-box.tar.gz
+          sudo mv sing-box-${SING_BOX_VERSION}-linux-amd64/sing-box /usr/local/bin/
+          sing-box version
 
       - name: Install Python deps
-        run: |
-          pip install --upgrade pip
-          pip install seleniumbase
+        run: pip install --upgrade pip seleniumbase requests
 
-      - name: Run renew script
+      - name: Run renew
         env:
           TOKEN: ${{ secrets.BOT_HOSTING_TOKEN }}
-          PROXY: ${{ secrets.PROXY }}   # 可选，没配就是空
+          PROXY_STR: ${{ secrets.PROXY_STR }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           cd bot-hosting-renew
           python renew.py
@@ -56,5 +58,6 @@ jobs:
             bot-hosting-renew/page_debug.html
             bot-hosting-renew/page_debug.png
             bot-hosting-renew/after_renew.png
+            bot-hosting-renew/sing-box.log
           if-no-files-found: ignore
           retention-days: 7
