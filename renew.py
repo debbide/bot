@@ -99,14 +99,24 @@ def do_renew(proxy: str | None) -> tuple[bool, int]:
             print(f"  ℹ️  uc_gui_click_captcha: {e}")
         sb.sleep(3)
 
-        # 2) 注入 token
-        print("\n【2/5】注入 localStorage.token ...")
+        # 2) 注入 token 并刷新（让前端重新初始化登录态）
+        print("\n【2/5】注入 localStorage.token 并刷新页面 ...")
         token = os.environ["TOKEN"]
         sb.execute_script("localStorage.setItem('token', arguments[0])", token)
         got = sb.execute_script("return localStorage.getItem('token')")
         if got != token:
             raise RuntimeError("localStorage 注入失败")
-        print("  ✓ token 已写入")
+        print("  ✓ token 已写入 localStorage")
+        # 刷新页面，让 SPA 用 token 重新走登录初始化
+        print("  → 刷新首页，让前端读 token")
+        sb.refresh()
+        sb.sleep(3)
+        # 打印一些登录态判断依据
+        try:
+            has_token_after = sb.execute_script("return localStorage.getItem('token')")
+            print(f"  刷新后 localStorage.token 长度: {len(has_token_after or '')}")
+        except Exception:
+            pass
 
         # 3) 跳 billings
         print(f"\n【3/5】跳转 {BILLINGS_URL} ...")
@@ -116,8 +126,26 @@ def do_renew(proxy: str | None) -> tuple[bool, int]:
         except Exception as e:
             print(f"  ℹ️  uc_gui_click_captcha: {e}")
         sb.sleep(5)
-        print(f"  页面标题: {sb.get_title()}")
-        print(f"  当前 URL: {sb.get_current_url()}")
+        cur_url = sb.get_current_url()
+        title = sb.get_title()
+        print(f"  页面标题: {title}")
+        print(f"  当前 URL: {cur_url}")
+
+        # 登录态检查：如果被踢回登录页/首页说明 token 认证没生效
+        if "billings" not in cur_url.lower():
+            print(f"  ✗ 未停留在 /a/billings，可能未登录成功（被重定向到 {cur_url}）")
+            (HERE / "page_debug.html").write_text(sb.get_page_source(), encoding="utf-8")
+            sb.save_screenshot(str(HERE / "page_debug.png"))
+            # 顺便 dump 一些登录相关线索
+            try:
+                keys = sb.execute_script("return Object.keys(localStorage)")
+                cookies = sb.get_cookies()
+                cookie_names = [c.get("name") for c in cookies]
+                print(f"  localStorage keys: {keys}")
+                print(f"  cookie names    : {cookie_names}")
+            except Exception as e:
+                print(f"  dump 登录态失败: {e}")
+            raise RuntimeError("token 注入后未登录成功（被重定向出 billings 页面）")
 
         # 4) 找 Renew 按钮
         print(f"\n【4/5】查找 '{RENEW_TEXT}' 按钮 ...")
